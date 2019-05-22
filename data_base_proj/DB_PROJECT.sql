@@ -425,6 +425,21 @@ SELECT DISTINCT first_value(e.element_nm) OVER (PARTITION BY e.isotopes_cnt ORDE
  WHERE e.isotopes_cnt NOTNULL
  ORDER BY isotopes_cnt;
 
+--7 Indexes
+CREATE INDEX element_num ON db_project.element (element_no, element_nm);
+
+CREATE INDEX appl_id ON db_project.element_application USING hash (application_id);
+
+CREATE INDEX el_x_appl ON db_project.element_x_application USING hash (element_no);
+
+CREATE INDEX res_team ON db_project.research_team (team_id, team_nm);
+
+CREATE INDEX scientist_ind ON db_project.scientist (scientist_nm, start_dt, end_dt);
+
+CREATE INDEX res_ind ON db_project.research (team_id, start_dt, end_dt);
+
+CREATE INDEX el_x_res ON db_project.element_x_research (element_no, research_id);
+
 --8
 --8.1 (View information about elements' application, where creator of it and year is known, order by element_no)
 
@@ -514,6 +529,44 @@ SELECT e.element_nm AS "Название элемента",
  GROUP BY e.element_nm
  ORDER BY e.element_nm ASC;
 
-select element_nm
-from db_project.element
-where isotopes_cnt = null;
+--9
+--9.1 (This function looks for the latest start of research on any element, hence brings information about newest element)
+CREATE OR REPLACE FUNCTION newest_element() RETURNS TEXT
+  LANGUAGE SQL
+  AS $$
+    SELECT element_nm
+      FROM (
+    SELECT DISTINCT element_nm,
+                    max(r.start_dt) AS max_start
+      FROM db_project.element e
+     INNER JOIN db_project.element_x_research exr
+        ON e.element_no = exr.element_no
+     INNER JOIN db_project.research r
+        ON exr.research_id = r.research_id
+     GROUP BY element_nm) el_max
+     WHERE max_start = (
+    SELECT DISTINCT max(r.start_dt) AS max_s
+      FROM db_project.element e
+     INNER JOIN db_project.element_x_research exr
+        ON e.element_no = exr.element_no
+     INNER JOIN db_project.research r
+        ON exr.research_id = r.research_id);
+  $$;
+
+SELECT newest_element();
+
+--9.2 (Given a name of element returns information about element in the form of text)
+CREATE OR REPLACE FUNCTION give_information(str VARCHAR) RETURNS TEXT
+  LANGUAGE SQL
+  AS $$
+    SELECT cast(element_nm AS VARCHAR) || ' has an element symbol ' || cast(element_symbol AS VARCHAR) || '. It is a ' ||
+           cast(element_type AS VARCHAR) ||'-element with the number ' || cast(element_no AS VARCHAR) ||
+           ' in periodic table. Its atomic weight is ' || cast(round(element_atomic_weight) AS VARCHAR) || ', so it has ' ||
+           cast(element_no AS VARCHAR) || ' electrons, ' || cast(element_no AS VARCHAR) || ' protons, and ' ||
+           cast(round(element_atomic_weight - element_no) AS VARCHAR) || ' neutrons. Its electron shell configuration is ' ||
+           cast(electron_shell_configuration AS VARCHAR) || '.' AS info
+      FROM db_project.element
+     WHERE element_nm = $1;
+  $$;
+
+SELECT give_information('Nitrogen');
